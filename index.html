@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>乘法口诀打地鼠 - 9洞全开版</title>
+    <style>
+        * { box-sizing: border-box; user-select: none; }
+        body {
+            margin: 0; padding: 0;
+            background: linear-gradient(to bottom, #87CEEB 0%, #98FB98 100%);
+            font-family: 'Comic Sans MS', 'Arial Rounded MT Bold', sans-serif;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            height: 100vh; overflow: hidden;
+        }
+
+        /* 顶部状态栏 */
+        .header {
+            display: flex; gap: 40px; font-size: 24px; font-weight: bold; color: #333;
+            margin-bottom: 20px; text-shadow: 1px 1px 0 #fff;
+        }
+        .header span { background: rgba(255,255,255,0.8); padding: 8px 20px; border-radius: 20px; }
+
+        /* 游戏区域：3x3 网格 */
+        .game-board {
+            display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px;
+            padding: 20px; background: rgba(139, 69, 19, 0.15); border-radius: 20px;
+        }
+
+        /* 地洞样式 */
+        .hole {
+            width: 120px; height: 120px; position: relative; cursor: pointer;
+            display: flex; align-items: flex-end; justify-content: center;
+        }
+        .hole-bg {
+            width: 100%; height: 40px; background: #3e2723; border-radius: 50%;
+            position: absolute; bottom: 0; z-index: 2;
+            box-shadow: inset 0 -5px 10px rgba(0,0,0,0.5);
+        }
+
+        /* 地鼠样式 */
+        .mole {
+            width: 90px; height: 90px; background: #8d6e63; border-radius: 50% 50% 40% 40%;
+            position: absolute; bottom: 10px; z-index: 1;
+            transform: translateY(120%); transition: transform 0.25s ease-out;
+            display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+        .mole.up { transform: translateY(0); }
+        
+        /* 地鼠的眼睛 */
+        .mole::before, .mole::after {
+            content: ''; position: absolute; top: 25px; width: 12px; height: 12px;
+            background: #000; border-radius: 50%;
+        }
+        .mole::before { left: 20px; }
+        .mole::after { right: 20px; }
+
+        /* 地鼠头顶的数字 */
+        .mole-num {
+            position: absolute; top: -40px; font-size: 32px; font-weight: bold; color: #fff;
+            text-shadow: 2px 2px 0 #000, -1px -1px 0 #000;
+            background: rgba(0,0,0,0.5); padding: 2px 10px; border-radius: 10px;
+            z-index: 3;
+        }
+
+        /* 反馈特效 (彩蛋/炸弹) */
+        .effect {
+            position: absolute; top: -80px; font-size: 60px; z-index: 10;
+            animation: popUp 0.6s ease-out forwards; pointer-events: none;
+        }
+        @keyframes popUp {
+            0% { transform: scale(0.5) translateY(0); opacity: 1; }
+            50% { transform: scale(1.5) translateY(-40px); opacity: 1; }
+            100% { transform: scale(1) translateY(-80px); opacity: 0; }
+        }
+
+        /* 底部题目区 */
+        .question-box {
+            margin-top: 30px; font-size: 52px; font-weight: bold; color: #fff;
+            background: #ff7043; padding: 15px 50px; border-radius: 15px;
+            box-shadow: 0 8px 0 #d84315, 0 12px 20px rgba(0,0,0,0.2);
+            text-shadow: 2px 2px 0 rgba(0,0,0,0.2);
+            min-width: 320px; text-align: center;
+        }
+
+        /* 游戏结束遮罩 */
+        .overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8); color: #fff; display: none;
+            flex-direction: column; align-items: center; justify-content: center;
+            z-index: 100;
+        }
+        .overlay h1 { font-size: 60px; margin-bottom: 20px; }
+        .overlay button {
+            padding: 15px 40px; font-size: 24px; background: #4CAF50; color: #fff;
+            border: none; border-radius: 10px; cursor: pointer;
+            box-shadow: 0 5px 0 #388E3C; transition: 0.2s;
+        }
+        .overlay button:hover { background: #45a049; transform: translateY(-2px); }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <span>🏆 得分: <b id="score">0</b></span>
+        <span>❤️ 生命: <b id="lives">5</b></span>
+    </div>
+
+    <div class="game-board" id="board"></div>
+
+    <div class="question-box" id="question">3 × 4 = ?</div>
+
+    <div class="overlay" id="gameOver">
+        <h1>💥 游戏结束!</h1>
+        <p style="font-size: 30px; margin-bottom: 30px;">最终得分: <b id="finalScore">0</b></p>
+        <button onclick="initGame()">再玩一次</button>
+    </div>
+
+<script>
+    // 简易音效生成
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    const audioCtx = new AudioContext();
+
+    function playSound(type) {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+
+        if (type === 'correct') {
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(523.25, audioCtx.currentTime);
+            osc.frequency.setValueAtTime(659.25, audioCtx.currentTime + 0.1);
+            gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+            osc.start(audioCtx.currentTime);
+            osc.stop(audioCtx.currentTime + 0.3);
+        } else if (type === 'wrong') {
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 0.3);
+            gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+            osc.start(audioCtx.currentTime);
+            osc.stop(audioCtx.currentTime + 0.3);
+        }
+    }
+
+    // 游戏状态
+    let score = 0;
+    let lives = 5;
+    let currentAnswer = 0;
+    let activeMoles = new Set(); // 记录当前活跃的地鼠
+    let isPlaying = false;
+
+    const board = document.getElementById('board');
+    const questionEl = document.getElementById('question');
+    const scoreEl = document.getElementById('score');
+    const livesEl = document.getElementById('lives');
+    const gameOverEl = document.getElementById('gameOver');
+    const finalScoreEl = document.getElementById('finalScore');
+
+    // 初始化地洞
+    function createBoard() {
+        board.innerHTML = '';
+        for (let i = 0; i < 9; i++) {
+            const hole = document.createElement('div');
+            hole.className = 'hole';
+            hole.innerHTML = `
+                <div class="mole" id="mole-${i}">
+                    <div class="mole-num" id="num-${i}"></div>
+                </div>
+                <div class="hole-bg"></div>
+            `;
+            hole.addEventListener('click', () => whack(i));
+            board.appendChild(hole);
+        }
+    }
+
+    // 生成乘法题目
+    function generateQuestion() {
+        const a = Math.floor(Math.random() * 9) + 1;
+        const b = Math.floor(Math.random() * 9) + 1;
+        currentAnswer = a * b;
+        questionEl.textContent = `${a} × ${b} = ?`;
+    }
+
+    // 核心逻辑：9只地鼠同时出现
+    function popUpAllMoles() {
+        if (!isPlaying) return;
+        activeMoles.clear();
+
+        // 生成0-8的随机顺序，用于随机放置正确答案
+        let positions = Array.from({length: 9}, (_, i) => i);
+        for (let i = positions.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [positions[i], positions[j]] = [positions[j], positions[i]];
+        }
+        const correctIndex = positions[0]; // 正确答案所在的位置
+
+        for (let i = 0; i < 9; i++) {
+            const moleEl = document.getElementById(`mole-${i}`);
+            const numEl = document.getElementById(`num-${i}`);
+
+            let numberToShow;
+            if (i === correctIndex) {
+                numberToShow = currentAnswer;
+            } else {
+                // 生成干扰项，确保不等于正确答案
+                do {
+                    numberToShow = Math.floor(Math.random() * 81) + 1;
+                } while (numberToShow === currentAnswer);
+            }
+
+            numEl.innerText = numberToShow;
+            moleEl.classList.add('up');
+            activeMoles.add(i);
+        }
+    }
+
+    // 隐藏地鼠
+    function hideMole(index) {
+        const moleEl = document.getElementById(`mole-${index}`);
+        moleEl.classList.remove('up');
+        activeMoles.delete(index);
+        
+        const existingEffect = moleEl.querySelector('.effect');
+        if (existingEffect) existingEffect.remove();
+        delete moleEl.dataset.clicked; // 重置点击状态
+    }
+
+    // 敲击逻辑
+    function whack(index) {
+        if (!activeMoles.has(index) || !isPlaying) return;
+
+        const moleEl = document.getElementById(`mole-${index}`);
+        const numEl = document.getElementById(`num-${index}`);
+        const clickedNum = parseInt(numEl.innerText);
+
+        // 防止重复点击
+        if (moleEl.dataset.clicked === 'true') return;
+        moleEl.dataset.clicked = 'true';
+
+        if (clickedNum === currentAnswer) {
+            // 敲中正确：彩蛋 🎉
+            score += 10;
+            scoreEl.innerText = score;
+            playSound('correct');
+            showEffect(moleEl, '🎉');
+            // 答对后，短暂延迟让所有地鼠缩回，然后刷新题目并重新冒出
+            setTimeout(() => {
+                for(let i=0; i<9; i++) hideMole(i);
+                generateQuestion();
+                setTimeout(popUpAllMoles, 300);
+            }, 400);
+        } else {
+            // 敲中错误：炸弹 💣
+            lives -= 1;
+            livesEl.innerText = lives;
+            playSound('wrong');
+            showEffect(moleEl, '💣');
+            // 敲错后该地鼠缩回
+            setTimeout(() => hideMole(index), 300);
+            if (lives <= 0) endGame();
+        }
+    }
+
+    // 显示特效
+    function showEffect(moleEl, emoji) {
+        const effect = document.createElement('div');
+        effect.className = 'effect';
+        effect.innerText = emoji;
+        moleEl.appendChild(effect);
+    }
+
+    // 游戏控制
+    function initGame() {
+        score = 0; lives = 5; isPlaying = true;
+        scoreEl.innerText = score;
+        livesEl.innerText = lives;
+        gameOverEl.style.display = 'none';
+        
+        createBoard();
+        generateQuestion();
+        popUpAllMoles(); // 开局直接9只同时出现
+    }
+
+    function endGame() {
+        isPlaying = false;
+        finalScoreEl.innerText = score;
+        gameOverEl.style.display = 'flex';
+    }
+
+    // 启动游戏
+    initGame();
+</script>
+</body>
+</html>
